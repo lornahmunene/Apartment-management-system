@@ -7,6 +7,10 @@ const TenantSection = ({ tenants, rooms, onAddTenant }) => {
     name: "",
     email: "",
     phone: "",
+    // ADDED: national_id
+    national_id: "",
+    // ADDED: moving_in_date, defaults to today
+    moving_in_date: new Date().toISOString().split("T")[0],
   });
 
   const handleChange = (e) => {
@@ -17,10 +21,13 @@ const TenantSection = ({ tenants, rooms, onAddTenant }) => {
     e.preventDefault();
     await onAddTenant(newTenant);
     setIsModalOpen(false);
+    // Reset form fields after submission
     setNewTenant({
       name: "",
       email: "",
       phone: "",
+      national_id: "",
+      moving_in_date: new Date().toISOString().split("T")[0],
     });
   };
 
@@ -42,6 +49,8 @@ const TenantSection = ({ tenants, rooms, onAddTenant }) => {
             <th className="p-2 border">Name</th>
             <th className="p-2 border">Email</th>
             <th className="p-2 border">Phone</th>
+            {/* ADDED: National ID header */}
+            <th className="p-2 border">National ID</th>
             <th className="p-2 border">Room</th>
             <th className="p-2 border">Moving In</th>
           </tr>
@@ -53,6 +62,8 @@ const TenantSection = ({ tenants, rooms, onAddTenant }) => {
                 <td className="p-2 border">{tenant.name}</td>
                 <td className="p-2 border">{tenant.email}</td>
                 <td className="p-2 border">{tenant.phone || "N/A"}</td>
+                {/* ADDED: National ID data */}
+                <td className="p-2 border">{tenant.national_id || "N/A"}</td>
                 <td className="p-2 border">
                   {rooms.find((r) => r.tenant_id === tenant.id)?.room_number || "Not Assigned"}
                 </td>
@@ -63,7 +74,8 @@ const TenantSection = ({ tenants, rooms, onAddTenant }) => {
             ))
           ) : (
             <tr>
-              <td colSpan="5" className="text-center p-4 text-gray-500">
+              {/* Updated colspan to 6 */}
+              <td colSpan="6" className="text-center p-4 text-gray-500">
                 No tenants available.
               </td>
             </tr>
@@ -114,15 +126,43 @@ const TenantSection = ({ tenants, rooms, onAddTenant }) => {
             <input
               type="text"
               name="phone"
-              placeholder="254712345678"
+              placeholder="e.g., 254712345678"
               value={newTenant.phone}
               onChange={handleChange}
               className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">
-              Format: 254XXXXXXXXX (for M-Pesa payments)
-            </p>
+            {/* REMOVED M-PESA NOTE */}
+          </div>
+
+          {/* ADDED: National ID input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              National ID / Passport Number
+            </label>
+            <input
+              type="text"
+              name="national_id"
+              placeholder="Enter ID number"
+              value={newTenant.national_id}
+              onChange={handleChange}
+              className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* ADDED: Moving In Date input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Moving In Date *
+            </label>
+            <input
+              type="date"
+              name="moving_in_date"
+              value={newTenant.moving_in_date}
+              onChange={handleChange}
+              className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500"
+              required
+            />
           </div>
 
           <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">

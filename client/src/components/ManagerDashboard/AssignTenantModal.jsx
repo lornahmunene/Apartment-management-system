@@ -19,7 +19,8 @@ const AssignTenantModal = ({ isOpen, onClose, tenants, onAssign }) => {
           <option value="">-- Select Tenant --</option>
           {tenants.map((t) => (
             <option key={t.id} value={t.id}>
-              {t.tenant_name}
+              {/* FIX: Change t.tenant_name to t.name */}
+              {t.name}
             </option>
           ))}
         </select>
