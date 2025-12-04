@@ -39,7 +39,7 @@ class UserLogin(Resource):
         user = User.query.filter_by(email=email).first()
 
         if user and check_password_hash(user.password, password):
-            # FIX: Convert user.id to string for JWT
+            # Convert user.id to string for JWT
             access_token = create_access_token(identity=str(user.id))
             
             return make_response({
@@ -58,8 +58,8 @@ class Rooms(Resource):
             rooms = Room.query.all()
             data = [{
                 "id": r.id,
-                "room_number": r.room_id,
-                "room_type": r.type,
+                "room_number": r.room_number,
+                "room_type": r.room_type,
                 "rent_amount": r.rent_amount,
                 "status": r.status,
                 "tenant_id": r.tenant_id
@@ -76,13 +76,13 @@ class Rooms(Resource):
             if not all(k in data for k in ("room_number", "room_type", "rent_amount")):
                 return make_response({"error": "Missing required fields"}, 400)
             
-            existing_room = Room.query.filter_by(room_id=data["room_number"]).first()
+            existing_room = Room.query.filter_by(room_number=data["room_number"]).first()
             if existing_room:
                 return make_response({"error": "Room number already exists"}, 400)
                 
             new_room = Room(
-                room_id=data["room_number"],
-                type=data["room_type"],
+                room_number=data["room_number"],
+                room_type=data["room_type"],
                 rent_amount=data["rent_amount"],
                 status=data.get("status", "vacant")
             )
@@ -92,8 +92,8 @@ class Rooms(Resource):
             
             return make_response({
                 "id": new_room.id,
-                "room_number": new_room.room_id,
-                "room_type": new_room.type,
+                "room_number": new_room.room_number,
+                "room_type": new_room.room_type,
                 "rent_amount": new_room.rent_amount,
                 "status": new_room.status,
                 "tenant_id": new_room.tenant_id
@@ -114,13 +114,18 @@ class RoomById(Resource):
                 room.tenant_id = data["tenant_id"]
             if "status" in data:
                 room.status = data["status"]
+            # Optional updates
+            if "room_type" in data:
+                room.room_type = data["room_type"]
+            if "rent_amount" in data:
+                room.rent_amount = data["rent_amount"]
 
             db.session.commit()
             
             return make_response({
                 "id": room.id,
-                "room_number": room.room_id,
-                "room_type": room.type,
+                "room_number": room.room_number,
+                "room_type": room.room_type,
                 "rent_amount": room.rent_amount,
                 "status": room.status,
                 "tenant_id": room.tenant_id
@@ -153,10 +158,12 @@ class Tenants(Resource):
             tenants = Tenant.query.all()
             data = [{
                 "id": t.id,
-                "name": t.tenant_name,
-                "phone": t.phone_number,
-                "email": t.tenant_email,
-                "room_id": t.room_id,
+                "name": t.name,
+                "phone": t.phone,
+                "email": t.email,
+                # FIXED: Include national_id in the GET response
+                "national_id": t.national_id, 
+                "room_number": t.to_dict().get("room_number"),
                 "moving_in_date": t.moving_in_date.isoformat() if t.moving_in_date else None
             } for t in tenants]
             return make_response(data, 200)
@@ -168,16 +175,19 @@ class Tenants(Resource):
         try:
             data = request.get_json()
             
-            # Only require name, phone, and email
-            if not all(k in data for k in ("name", "phone", "email")):
-                return make_response({"error": "Missing required fields: name, phone, email"}, 400)
+            # FIXED: Now requires moving_in_date as per the frontend form update
+            if not all(k in data for k in ("name", "phone", "email", "moving_in_date")):
+                return make_response({"error": "Missing required fields: name, phone, email, moving_in_date"}, 400)
             
             # Create tenant without room assignment
             new_tenant = Tenant(
-                tenant_name=data["name"], 
-                phone_number=data["phone"],
-                tenant_email=data["email"],
-                moving_in_date=datetime.date.today()
+                name=data["name"], 
+                phone=data["phone"],
+                email=data["email"],
+                # FIXED: Include national_id from request (optional)
+                national_id=data.get("national_id"),
+                # FIXED: Use the moving_in_date from the frontend form
+                moving_in_date=datetime.date.fromisoformat(data["moving_in_date"])
             )
             
             db.session.add(new_tenant)
@@ -185,10 +195,11 @@ class Tenants(Resource):
             
             return make_response({
                 "id": new_tenant.id,
-                "name": new_tenant.tenant_name,
-                "phone": new_tenant.phone_number,
-                "email": new_tenant.tenant_email,
-                "room_id": None,
+                "name": new_tenant.name,
+                "phone": new_tenant.phone,
+                "email": new_tenant.email,
+                "national_id": new_tenant.national_id, # FIXED: Include national_id in POST response
+                "room_number": None,
                 "moving_in_date": new_tenant.moving_in_date.isoformat() if new_tenant.moving_in_date else None
             }, 201)
         except Exception as e:
@@ -203,11 +214,17 @@ class TenantById(Resource):
             data = request.get_json()
 
             if "name" in data:
-                tenant.tenant_name = data["name"]
+                tenant.name = data["name"]
             if "phone" in data:
-                tenant.phone_number = data["phone"]
+                tenant.phone = data["phone"]
             if "email" in data:
-                tenant.tenant_email = data["email"]
+                tenant.email = data["email"]
+            # ADDED: Allow patching national_id
+            if "national_id" in data:
+                tenant.national_id = data["national_id"]
+            # ADDED: Allow patching moving_in_date
+            if "moving_in_date" in data:
+                 tenant.moving_in_date = datetime.date.fromisoformat(data["moving_in_date"])
 
             db.session.commit()
             return make_response({"message": "Tenant updated"}, 200)
@@ -243,11 +260,9 @@ class Payments(Resource):
             payments = Payment.query.all()
             data = [{
                 "id": p.id,
-                "amount": p.payment_price,
-                "date": p.payment_date.isoformat() if p.payment_date else None,
+                "amount": p.amount,
+                "date": p.date.isoformat() if p.date else None,
                 "tenant_id": p.tenant_id,
-                "mpesa_receipt": getattr(p, 'mpesa_receipt', None),
-                "phone_number": getattr(p, 'phone_number', None)
             } for p in payments]
             return make_response(data, 200)
         except Exception as e:
@@ -258,7 +273,7 @@ class Payments(Resource):
         try:
             data = request.get_json()
             
-            if not all(k in data for k in ("amount", "tenant_id")):
+            if not all(k in data for k in ("payment_price", "tenant_id")):
                 return make_response({"error": "Missing required fields"}, 400)
             
             tenant = Tenant.query.get(data["tenant_id"])
@@ -266,9 +281,10 @@ class Payments(Resource):
                 return make_response({"error": "Tenant not found"}, 404)
             
             new_payment = Payment(
-                payment_price=data["amount"], 
+                amount=data["payment_price"], 
                 tenant_id=data["tenant_id"],
-                payment_date=datetime.date.today()
+                date=datetime.date.today(),
+                room_id=data.get("room_id") 
             )
             db.session.add(new_payment)
             db.session.commit()
@@ -276,8 +292,8 @@ class Payments(Resource):
             return make_response({
                 "payment": {
                     "id": new_payment.id,
-                    "amount": new_payment.payment_price,
-                    "date": new_payment.payment_date.isoformat(),
+                    "amount": new_payment.amount,
+                    "date": new_payment.date.isoformat(),
                     "tenant_id": new_payment.tenant_id
                 }
             }, 201)
@@ -293,88 +309,16 @@ class PaymentById(Resource):
             data = request.get_json()
             
             if "amount" in data:
-                payment.payment_price = data["amount"]
+                payment.amount = data["amount"]
             
             db.session.commit()
             
             return make_response({
                 "id": payment.id,
-                "amount": payment.payment_price,
-                "date": payment.payment_date.isoformat() if payment.payment_date else None,
+                "amount": payment.amount,
+                "date": payment.date.isoformat() if payment.date else None,
                 "tenant_id": payment.tenant_id
             }, 200)
-        except Exception as e:
-            db.session.rollback()
-            return make_response({"error": str(e)}, 500)
-
-
-# ------------------ M-PESA INTEGRATION ---------------------- #
-class MpesaSTKPush(Resource):
-    """Initiate M-Pesa STK Push for payment"""
-    @jwt_required()
-    def post(self):
-        try:
-            data = request.get_json()
-            phone_number = data.get("phone_number")
-            amount = data.get("amount")
-            tenant_id = data.get("tenant_id")
-            
-            if not all([phone_number, amount, tenant_id]):
-                return make_response({"error": "Missing required fields"}, 400)
-            
-            # TODO: Implement actual M-Pesa STK Push logic here
-            # For now, return success message
-            return make_response({
-                "success": True,
-                "message": "STK Push sent. Check your phone.",
-                "phone_number": phone_number,
-                "amount": amount
-            }, 200)
-            
-        except Exception as e:
-            return make_response({"error": str(e)}, 500)
-
-
-class MpesaCallback(Resource):
-    """Handle M-Pesa callback after payment"""
-    def post(self):
-        try:
-            data = request.get_json()
-            
-            # Extract M-Pesa callback data
-            # This structure may vary based on your M-Pesa integration
-            result_code = data.get("Body", {}).get("stkCallback", {}).get("ResultCode")
-            
-            if result_code == 0:  # Success
-                callback_metadata = data.get("Body", {}).get("stkCallback", {}).get("CallbackMetadata", {}).get("Item", [])
-                
-                amount = None
-                mpesa_receipt = None
-                phone_number = None
-                
-                for item in callback_metadata:
-                    if item.get("Name") == "Amount":
-                        amount = item.get("Value")
-                    elif item.get("Name") == "MpesaReceiptNumber":
-                        mpesa_receipt = item.get("Value")
-                    elif item.get("Name") == "PhoneNumber":
-                        phone_number = item.get("Value")
-                
-                # Create payment record
-                # NOTE: You'll need to add tenant_id tracking, possibly via transaction ID
-                new_payment = Payment(
-                    payment_price=amount,
-                    payment_date=datetime.date.today(),
-                    tenant_id=1  # TODO: Link to actual tenant
-                )
-                
-                db.session.add(new_payment)
-                db.session.commit()
-                
-                return make_response({"message": "Payment recorded successfully"}, 200)
-            
-            return make_response({"message": "Payment failed or cancelled"}, 200)
-            
         except Exception as e:
             db.session.rollback()
             return make_response({"error": str(e)}, 500)
@@ -389,8 +333,7 @@ api.add_resource(Tenants, '/tenants')
 api.add_resource(TenantById, '/tenants/<int:id>')
 api.add_resource(Payments, '/payments')
 api.add_resource(PaymentById, '/payments/<int:id>')
-api.add_resource(MpesaSTKPush, '/mpesa/stkpush')
-api.add_resource(MpesaCallback, '/mpesa/callback')
+
 
 # ------------------ START APP ---------------------- #
 if __name__ == "__main__":
